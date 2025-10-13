@@ -1,19 +1,17 @@
-# Usa uma imagem Python mais completa
-FROM python:3.9-bullseye
+# 1. Start with the lightweight Python image.
+FROM python:3.9-slim
 
-# Instala as ferramentas de compilação
-RUN apt-get update && apt-get install -y build-essential
-
-# O resto do arquivo permanece o mesmo...
+# 2. Set the working directory.
 WORKDIR /app
 
-COPY requirements.txt .
+# 3. THIS IS THE FIX: Copy the consumer's specific requirements file.
+COPY requirements-consumer.txt requirements.txt
+
+# 4. Install the consumer's dependencies.
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 5. Copy the rest of your project code.
 COPY . .
 
-# Comando específico para cada serviço
-# (CMD ["python", "consumer/main.py"] ou CMD ["python", "producer/main.py"])
-
-# Comando que será executado quando o container iniciar
+# 6. Set the start command.
 CMD ["python", "consumer/main.py"]
