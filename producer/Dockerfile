@@ -1,19 +1,19 @@
-# Usa uma imagem Python leve como base
-FROM python:3.9-slim
+# Usa uma imagem Python mais completa
+FROM python:3.9-bullseye
 
-# ----> ADIÇÃO IMPORTANTE AQUI <----
-# Atualiza a lista de pacotes do sistema e instala as ferramentas de compilação.
+# Instala as ferramentas de compilação
 RUN apt-get update && apt-get install -y build-essential
 
-# Define o diretório de trabalho dentro do container
+# O resto do arquivo permanece o mesmo...
 WORKDIR /app
 
-# Copia e instala as dependências Python
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia todo o código do projeto
 COPY . .
+
+# Comando específico para cada serviço
+# (CMD ["python", "consumer/main.py"] ou CMD ["python", "producer/main.py"])
 
 # Comando que será executado quando o container iniciar
 CMD ["python", "producer/main.py"]
