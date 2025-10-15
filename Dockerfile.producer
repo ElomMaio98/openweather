@@ -1,0 +1,18 @@
+FROM python:3.9-slim
+
+WORKDIR /app
+
+# Copia tudo que é necessário
+COPY requirements.txt .
+COPY common/ ./common/
+COPY config/ ./config/
+COPY producer/ ./producer/
+
+# Instala dependências
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Define o diretório de trabalho para o producer
+WORKDIR /app/producer
+
+# Comando para rodar
+CMD ["python", "main.py"]
