@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from common.apiclient import WeatherAPIClient
-from common.kafkaclient import KafkaProducerClient
+from common.kafkaclient import KafkaClient
 import json
 import logging
 
@@ -32,7 +32,7 @@ def load_locations(path):
         return []
     except json.JSONDecodeError:
         logger.error(f"Erro ao decodificar o arquivo JSON: {path}")
-        return
+        return []
     
 def validate_enviroment():
     required_vars = {
@@ -58,7 +58,8 @@ def main():
         return
     try:    
         weather_client = WeatherAPIClient(API_KEY, BASE_URL)
-        kafka_producer = KafkaProducerClient(KAFKA_BOOTSTRAP_SERVERS)
+        kafka_client = KafkaClient()
+        kafka_producer = kafka_client.create_producer()  # Cria o producer
     except Exception as e:
         logger.error(f"Erro ao inicializar clientes: {e}")
         return
@@ -68,7 +69,7 @@ def main():
         while True:
             iteration += 1
             logger.info(f"\n{'='*60}")
-            logger.info(f"🔄 Iteração #{iteration} - Coletando dados de {len(locations)} cidades")
+            logger.info(f"Iteração #{iteration} - Coletando dados de {len(locations)} cidades")
             logger.info(f"{'='*60}")
             
             success_count = 0
@@ -82,32 +83,36 @@ def main():
                         continue
                     message = {
                         "city": weather_data.get('name', loc['name']),
-                        "temperature_celsius": weather_data['main']['temp'],  # Já vem em Celsius!
+                        "temperature_celsius": weather_data['main']['temp'],
                         "humidity": weather_data['main']['humidity'],
                         "pressure": weather_data['main']['pressure'],
                         "wind_speed": weather_data['wind']['speed'],
                         "timestamp_unix": weather_data.get('dt')
                     }
 
-                    kafka_producer.send_message(KAFKA_TOPIC, message)
+                    kafka_client.send_message(KAFKA_TOPIC, message)  # ✅ CORRIGIDO
                     logger.info(f"✅ {message['city']}: {message['temperature_celsius']}°C")
                     success_count += 1
                 except KeyError as e:
-                    logger.error(f"❌ Erro de estrutura de dados para {loc['name']}: {e}")
+                    logger.error(f"Erro de estrutura de dados para {loc['name']}: {e}")
                     error_count += 1
                 except Exception as e:
-                    logger.error(f"❌ Erro ao processar {loc['name']}: {e}")
+                    logger.error(f"Erro ao processar {loc['name']}: {e}")
                     error_count += 1
+            
+            logger.info(f"\n📊 Resumo da iteração #{iteration}:")
+            logger.info(f"   ✅ Sucessos: {success_count}")
+            logger.info(f"   ❌ Erros: {error_count}")
+            
             time.sleep(PRODUCER_SLEEP_SECONDS)
             
     except KeyboardInterrupt:
-        logger.info("\n⏹️  Producer interrompido pelo usuário (Ctrl+C)")
+        logger.info("\nProducer interrompido pelo usuário (Ctrl+C)")
     except Exception as e:
-        logger.error(f"❌ Erro fatal no producer: {e}")
+        logger.error(f"Erro fatal no producer: {e}")
     finally:
-        # Fecha conexões
-        kafka_producer.close()
-        logger.info("👋 Producer finalizado")
+        kafka_client.close()  # ✅ CORRIGIDO
+        logger.info("Producer finalizado")
 
 
 if __name__ == "__main__":
