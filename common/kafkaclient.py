@@ -1,63 +1,83 @@
-from kafka import KafkaProducer, KafkaConsumer
+import os
 import json
+from kafka import KafkaProducer, KafkaConsumer
+from kafka.errors import KafkaError
 import logging
-from kafka.errors import KafkaConnectionError
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class KafkaProducerClient:
-    def __init__(self, bootstrap_servers):
+class KafkaClient:
+    def __init__(self):
+        self.bootstrap_servers = os.getenv('KAFKA_BOOTSTRAP_SERVERS')
+        self.sasl_username = os.getenv('KAFKA_SASL_USERNAME')
+        self.sasl_password = os.getenv('KAFKA_SASL_PASSWORD')
+        
+        # Configurações SASL para Confluent Cloud
+        self.security_config = {
+            'bootstrap_servers': self.bootstrap_servers,
+            'security_protocol': 'SASL_SSL',
+            'sasl_mechanism': 'PLAIN',
+            'sasl_plain_username': self.sasl_username,
+            'sasl_plain_password': self.sasl_password,
+        }
+        
+        self.producer = None
+        self.consumer = None
+    
+    def create_producer(self):
+        """Cria um producer Kafka"""
         try:
             self.producer = KafkaProducer(
-                bootstrap_servers = bootstrap_servers,
-                value_serializer = lambda v: json.dumps(v).encode('utf-8'),
-                acks = 'all', 
-                retries = 3,
-                max_in_flight_requests_per_connection = 1)
-            logger.info(f"Produtor Kafka conectado em {bootstrap_servers}.")
-        except KafkaConnectionError as e:
-            logger.error(f"Erro ao se conectar ao Kafka em {bootstrap_servers}. Erro: {e}")
-            raise
-
-    def send_message(self, topic, message):
-        try: 
-            future = self.producer.send(topic, value = message)
-            record_metadata = future.get(timeout=10)
-            logger.debug(f"Mensagem enviada para {record_metadata.topic} partition {record_metadata.partition} offset {record_metadata.offset}")
+                **self.security_config,
+                value_serializer=lambda v: json.dumps(v).encode('utf-8'),
+                acks='all',
+                retries=3,
+                max_in_flight_requests_per_connection=1
+            )
+            logger.info(f"Producer conectado ao Kafka: {self.bootstrap_servers}")
+            return self.producer
         except Exception as e:
-            logging.critical(f"Erro ao enviar a mensagem: {e}")
+            logger.error(f"Erro ao criar producer: {e}")
             raise
-    def close(self):
-        if self.producer:
-            self.producer.flush()
-            self.producer.close()
-            logger.info("Fechou o produtor")
-
-class KafkaConsumerClient:
-    def __init__(self, bootstrap_servers, topic, group_id):
+    
+    def create_consumer(self, topic, group_id='weather-consumer-group'):
+        """Cria um consumer Kafka"""
         try:
             self.consumer = KafkaConsumer(
                 topic,
-                bootstrap_servers=bootstrap_servers,
+                **self.security_config,
                 group_id=group_id,
-                auto_offset_reset='earliest', # Começa do início se for um novo grupo
+                auto_offset_reset='earliest',
+                enable_auto_commit=True,
                 value_deserializer=lambda m: json.loads(m.decode('utf-8'))
             )
-            logging.info(f"Consumidor Kafka conectado em {bootstrap_servers}, escutando o tópico '{topic}'.")
-        except KafkaConnectionError as e:
-            logging.critical(f"Não foi possível conectar ao Kafka em {bootstrap_servers}. Erro: {e}")
+            logger.info(f"Consumer conectado ao tópico '{topic}' no Kafka: {self.bootstrap_servers}")
+            return self.consumer
+        except Exception as e:
+            logger.error(f"Erro ao criar consumer: {e}")
             raise
     
-    def get_messages(self):
+    def send_message(self, topic, message):
+        """Envia mensagem para o tópico"""
+        if not self.producer:
+            self.create_producer()
+        
         try:
-            for message in self.consumer:
-                yield message.value
-        except Exception as e:
-            logging.critical(f"Erro ao consumir mensagens: {e}")
-            raise
-
+            future = self.producer.send(topic, value=message)
+            record_metadata = future.get(timeout=10)
+            logger.debug(f"Mensagem enviada para {record_metadata.topic}[{record_metadata.partition}] @ offset {record_metadata.offset}")
+            return True
+        except KafkaError as e:
+            logger.error(f"Erro ao enviar mensagem: {e}")
+            return False
+    
     def close(self):
+        """Fecha conexões"""
+        if self.producer:
+            self.producer.flush()
+            self.producer.close()
+            logger.info("Producer fechado")
+        
         if self.consumer:
             self.consumer.close()
-            logging.info("Consumidor Kafka fechado.")
+            logger.info("Consumer fechado")
