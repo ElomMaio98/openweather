@@ -1,7 +1,7 @@
 import psycopg2
 from psycopg2 import pool
 
-class postgresclient:
+class PostgresClient:
     def __init__(self, db_config):
         db_config = {
             'host': db_config.get('host'),
