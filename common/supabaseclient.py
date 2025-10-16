@@ -22,6 +22,8 @@ class SupabaseClient:
             # Prepara os dados
             record = {
                 'city': data.get('city'),
+                'latitude': data.get('latitude'),           # ✅ ADICIONADO
+                'longitude': data.get('longitude'),         # ✅ ADICIONADO
                 'temperatura_celsius': data.get('temperature_celsius'),
                 'humidity': data.get('humidity'),
                 'pressure': data.get('pressure'),
