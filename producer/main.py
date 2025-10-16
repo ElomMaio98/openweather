@@ -13,12 +13,11 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-
 API_KEY = os.getenv('WEATHER_KEY')
 BASE_URL = os.getenv('base_url', 'http://api.openweathermap.org/data/2.5/weather')
 KAFKA_BOOTSTRAP_SERVERS = os.getenv('KAFKA_BOOTSTRAP_SERVERS')  
 LOCATIONS_CONFIG_PATH = os.path.join(os.path.dirname(__file__),'../config/locations.json')
-PRODUCER_SLEEP_SECONDS = int(os.getenv('PRODUCER_SLEEP_SECONDS', 10))
+PRODUCER_SLEEP_SECONDS = int(os.getenv('PRODUCER_SLEEP_SECONDS', 300))  # ✅ ALTERADO: 5 minutos padrão
 KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'dados_brutos')
 
 def load_locations(path):
@@ -48,6 +47,8 @@ def validate_enviroment():
     
 def main():
     logger.info("Iniciando Weather Data Producer")
+    logger.info(f"Intervalo de coleta: {PRODUCER_SLEEP_SECONDS} segundos")
+    
     if not validate_enviroment():
         logging.error("Encerrado por configurações faltantes")
         return
@@ -56,10 +57,11 @@ def main():
     if not locations:
         logger.info("AVISO: Nenhum local para processar. Verifique o arquivo 'config/locations.json'. Encerrando o programa.")
         return
+    
     try:    
         weather_client = WeatherAPIClient(API_KEY, BASE_URL)
         kafka_client = KafkaClient()
-        kafka_producer = kafka_client.create_producer()  # Cria o producer
+        kafka_producer = kafka_client.create_producer()
     except Exception as e:
         logger.error(f"Erro ao inicializar clientes: {e}")
         return
@@ -77,12 +79,16 @@ def main():
 
             for loc in locations:
                 try:
-                    weather_data = weather_client.get_weather(lat = loc["lat"], lon = loc["lon"])
+                    weather_data = weather_client.get_weather(lat=loc["lat"], lon=loc["lon"])
                     if not weather_data:
                         error_count += 1
                         continue
+                    
+                    # ✅ CORRIGIDO: Latitude e longitude agora vêm do config, não do weather_data
                     message = {
                         "city": weather_data.get('name', loc['name']),
+                        "latitude": loc["lat"],
+                        "longitude": loc["lon"],
                         "temperature_celsius": weather_data['main']['temp'],
                         "humidity": weather_data['main']['humidity'],
                         "pressure": weather_data['main']['pressure'],
@@ -90,9 +96,10 @@ def main():
                         "timestamp_unix": weather_data.get('dt')
                     }
 
-                    kafka_client.send_message(KAFKA_TOPIC, message)  # ✅ CORRIGIDO
-                    logger.info(f"✅ {message['city']}: {message['temperature_celsius']}°C")
+                    kafka_client.send_message(KAFKA_TOPIC, message)
+                    logger.info(f"✅ {message['city']}: {message['temperature_celsius']}°C (lat: {message['latitude']}, lon: {message['longitude']})")
                     success_count += 1
+                    
                 except KeyError as e:
                     logger.error(f"Erro de estrutura de dados para {loc['name']}: {e}")
                     error_count += 1
@@ -103,6 +110,7 @@ def main():
             logger.info(f"\n📊 Resumo da iteração #{iteration}:")
             logger.info(f"   ✅ Sucessos: {success_count}")
             logger.info(f"   ❌ Erros: {error_count}")
+            logger.info(f"   ⏰ Próxima coleta em {PRODUCER_SLEEP_SECONDS} segundos")
             
             time.sleep(PRODUCER_SLEEP_SECONDS)
             
@@ -111,7 +119,7 @@ def main():
     except Exception as e:
         logger.error(f"Erro fatal no producer: {e}")
     finally:
-        kafka_client.close()  # ✅ CORRIGIDO
+        kafka_client.close()
         logger.info("Producer finalizado")
 
 
